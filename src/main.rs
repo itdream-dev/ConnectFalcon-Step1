@@ -1,15 +1,330 @@
+extern crate rand;
+
 mod lib;
 
 use std::env;
+use std::io;
 use std::io::prelude::*;
 use std::fs::OpenOptions;
 use std::ptr;
 use std::mem;
 use libc;
+use rand::Rng;
 
 include!("lib/falcon.rs");
 
 fn main() {
+    println!("******************************");
+    println!(" --  Test of Task 1  --  ");
+    println!("Please input test method.");
+    println!("  1 - The method to test step by step.");
+    println!("  2 - The method to test and save result into files.");
+    println!("  3 - Test exits.");
+    println!("******************************");
+    
+    loop {
+        let mut test_method = String::new();
+
+        io::stdin().read_line(&mut test_method)
+            .expect("Faildd to read line.");
+
+        let test_method: u32 = match test_method.trim().parse() {
+            Ok(num) => num,
+            Err(_) => continue,
+        };
+
+        match test_method {
+            2 => {
+                println!("You set Test Method 1.");
+                generate_test_file();
+                println!("Test Method 1 was completed.\n");
+                println!("If you input test method again, you can continue to test.");
+                println!("  1 - The method to test and save result into files.");
+                println!("  2 - The method to test step by step.");
+                println!("  3 - Test exits.");
+            },
+            1 => {
+                println!("You set Test Method 2.");
+                println!("******************************");
+                println!("Please input test step.");
+                println!("  1 - Generate Multiple Private-Public key pairs");
+                println!("  2 - Generate Random data and Sign with Private keys");
+                println!("  3 - Verify signatures using public key(s)");
+                println!("  4 - Test Method 2 exit.");
+
+                let mut tested_step1 = false;
+                let mut tested_step2 = false;
+                let mut tested_step3 = false;
+
+                let mut seed: [u8; 48] = [0; 48];
+                let mut msg: [u8; 3300] = [0; 3300];
+                let mut entropy_input: [u8; 48] = [0; 48];
+                let mut m: *mut u8 = ptr::null_mut();
+                let mut mlen: u64 = 0;
+                let mut m1: *mut u8 = ptr::null_mut();
+                let mut mlen1: u64 = 0;
+                let mut sm: *mut u8 = ptr::null_mut();
+                let mut smlen: u64 = 0;
+                
+                let mut pk: [u8; CRYPTO_PUBLICKEYBYTES as usize] = [0; CRYPTO_PUBLICKEYBYTES as usize];
+                let mut sk: [u8; CRYPTO_SECRETKEYBYTES as usize] = [0; CRYPTO_SECRETKEYBYTES as usize];
+
+                unsafe {
+                    m = libc::calloc(mlen as usize, mem::size_of::<u8>()) as *mut u8;
+                    m1 = libc::calloc(mlen as usize, mem::size_of::<u8>()) as *mut u8;
+                    sm = libc::calloc((mlen as usize) + (CRYPTO_BYTES as usize), mem::size_of::<u8>()) as *mut u8;
+                }
+
+                // Initialize
+                for i in 0..48 {
+                    entropy_input[i] = i as u8;
+                    // entropy_input[i] = rand::thread_rng().gen_range(0, 48) as u8;
+                }
+
+                unsafe {
+                    randombytes_init(entropy_input.as_mut_ptr(), ptr::null_mut(), 256);
+                }
+
+                // Generate random seed
+                unsafe {
+                    randombytes(seed.as_mut_ptr(), 48);
+                }
+
+                loop {
+                    let mut unit_step = String::new();
+                    
+                    io::stdin().read_line(&mut unit_step)
+                        .expect("Faildd to read line.");
+
+                    let unit_step: u32 = match unit_step.trim().parse() {
+                        Ok(num) => num,
+                        Err(_) => continue,
+                    };
+
+                    match unit_step {
+                        1 => {
+                            println!("Test unit 1 : \"Generate Multiple Private-Public key pairs\".");
+
+                            test_unit_one(&mut seed, &mut pk, &mut sk);
+                            tested_step1 = true;
+                            tested_step2 = false;
+                            tested_step3 = false;
+
+                            println!("Test step 1 was completed");
+                            println!("Please input test step.");
+                            println!("  1 - Generate Multiple Private-Public key pairs");
+                            println!("  2 - Generate Random data and Sign with Private keys");
+                            println!("  3 - Verify signatures using public key(s)");
+                            println!("  4 - Test Method 2 exit.");
+                        },
+                        2 => {
+                            println!("Test unit 2 : \"Generate Random data and Sign with Private keys\".");
+
+                            if (tested_step1 == false ) {
+                                test_unit_one(&mut seed, &mut pk, &mut sk);
+                                tested_step1 = true;
+                            }
+
+                            test_unit_two(&mut sk, sm, &mut smlen, m, &mut mlen);
+                            tested_step2 = true;
+                            tested_step3 = false;
+
+                            println!("Test unit 2 was completed");
+                            println!("Please input test step.");
+                            println!("  1 - Generate Multiple Private-Public key pairs");
+                            println!("  2 - Generate Random data and Sign with Private keys");
+                            println!("  3 - Verify signatures using public key(s)");
+                            println!("  4 - Test Method 2 exit.");
+                        },
+                        3 => {
+                            println!("Test unit 3 : \"Verify signatures using public key(s)\".");
+
+                            if (tested_step1 == false ) {
+                                test_unit_one(&mut seed, &mut pk, &mut sk);
+                                tested_step1 = true;
+                            }
+
+                            if (tested_step2 == false) {
+                                test_unit_two(&mut sk, sm, &mut smlen, m, &mut mlen);
+                                tested_step2 = true;
+                            }
+                            
+                            // unsafe { *m.offset((mlen - 1) as  isize) = 0x55; }
+                            
+                            let check_verify = test_unit_three(&mut pk, m, &mut mlen, sm, &mut smlen, m1, &mut mlen1);
+                            
+                            match check_verify {
+                                0 => println!("\nVerify the message successfully."),
+                                1 => println!("\nMessage lengths are not the same."),
+                                2 => println!("\nMessage contents are not the same."),
+                                _ => println!("\nFail in calculation. {} ", check_verify),
+                            }
+
+                            tested_step3 = true;
+
+                            println!("Test uint 3 was completed");
+                            println!("Please input test step.");
+                            println!("  1 - Generate Multiple Private-Public key pairs");
+                            println!("  2 - Generate Random data and Sign with Private keys");
+                            println!("  3 - Verify signatures using public key(s)");
+                            println!("  4 - Test Method 2 exit.");
+                        },
+                        4 => {
+                            println!(" ---  Test Method 2 exits !  --- ");
+                            break;
+                        },
+                        _ => {
+                            println!("Please input correct number!");
+                        }
+                    }
+                }
+
+                unsafe { libc::free(m as *mut libc::c_void) };
+                unsafe { libc::free(m1 as *mut libc::c_void) };
+                unsafe { libc::free(sm as *mut libc::c_void) };
+
+                println!("Test Method 2 was completed.\n");
+                println!("If you input test method again, you can continue to test.");
+                println!("  1 - The method to test and save result into files.");
+                println!("  2 - The method to test step by step.");
+                println!("  3 - Test exits.");
+            },
+            3 => {
+                println!("   ---  Test exits. Bye!  ---  ");
+                break;
+            },
+            _ => {
+                println!("Please input correct number!");
+            }
+        }
+    }    
+}
+
+/**
+ *  Test unit 1 - Generate Multiple Private-Public key pairs
+*/
+fn test_unit_one(seed: &mut [u8], pk: &mut [u8], sk: &mut [u8]) {
+
+    // Generate random seed
+    unsafe {
+        randombytes(seed.as_mut_ptr(), 48);
+    }
+
+    // Generate the public/private keypair.
+    let mut ret_val = lib::api::nist_sign_keypair(pk.as_mut_ptr(), sk.as_mut_ptr());
+    if ret_val != 0 {
+        println!("crypto_sign_keypair returned <{}>\n", ret_val);
+        return;
+    }
+
+    // Display private key
+    print!("\nPrivate Key ( length :  {} ) = ", pk.len());
+    for i in 0..pk.len() {
+        print!("{:02X}", pk[i]);
+    }
+    print!(";\n");
+
+    // Display public key
+    print!("\nPublic Key ( length :  {} ) = ", sk.len());
+    for i in 0..sk.len() {
+        print!("{:02X}", sk[i]);
+    }
+    print!(";\n");
+}
+
+/**
+ *  Test unit 2 - Generate Random data and Sign with Private keys
+*/
+fn test_unit_two(sk: &mut [u8], sm: *mut u8, smlen: &mut u64, m: *mut u8, mlen: &mut u64) {
+
+    // Input message length
+    println!("\nPlease input Message length to generate.");
+    
+    loop {
+        let mut msg_len = String::new();
+                        
+        io::stdin().read_line(&mut msg_len)
+            .expect("Faildd to read line.");
+
+        let msg_len = msg_len.trim().parse::<u64>();
+        match msg_len {
+            Ok(num) => { *mlen = num; break },
+            Err(e) => { println!("\nPlease input correct number."); continue },
+        };
+    }
+
+    // Generate random message
+    unsafe {
+        randombytes(m, *mlen);
+    }
+
+    // Sign
+    let ret_val = lib::api::nist_crypto_sign(sm, smlen, m, *mlen, sk.as_mut_ptr());
+    if ret_val != 0 {
+        println!("crypto_sign returned <{}>\n", ret_val);
+        return;
+    }
+
+    unsafe {
+        // Display message
+        print!("\nMessage ( length :  {} ) = ", mlen);
+        for i in 0..*mlen {
+            print!("{:02X}", *m.offset(i as isize));
+        }
+        print!(";\n");
+
+        // Display Signed message
+        print!("\nSigned message ( length :  {} ) = ", smlen);
+        for i in 0..*smlen {
+            print!("{:02X}", *sm.offset(i as isize));
+        }
+        print!(";\n");
+    }
+}
+
+/**
+ *  Test unit 3 - Verify signatures using public key(s)
+*/
+fn test_unit_three(pk: &mut [u8], m: *mut u8, mlen: &mut u64, sm: *mut u8, smlen: &mut u64, m1: *mut u8, mlen1: &mut u64) -> i32 {
+    // Verify
+    let ret_val = lib::api::nist_crypto_sign_open(m1, mlen1, sm, *smlen, pk.as_mut_ptr());
+    if ret_val != 0 {
+        return ret_val;
+    }
+
+    if *mlen != *mlen1 {
+        return 1;
+    }
+
+    // Compare m and m1
+    let mut eqmem: bool = false;
+    for i in 0..*mlen {
+        unsafe {
+            if *m.offset(i as isize) != *m1.offset(i as isize) {
+                eqmem = true;
+                break;
+            }
+        }
+    }
+    if eqmem {
+        return 2;
+    }
+
+    return 0;
+}
+
+/**
+ * Test the Task 1 and save the result into files *.req and *.rep.
+ * In this test, 
+ * First, 5 pairs of private and public keys are generated,
+ * Second, 5 random data are generated.
+ * Third, the generated data are signed and verified.
+ * Finally, all the results are saved into files *.req and *.rep.
+ * *.req : a file which has 5 pairs of private and public keys.
+ * *.rep : a file which has all the results.
+ * 
+*/
+fn generate_test_file() {
     let mut seed: [u8; 48] = [0; 48];
     let mut msg: [u8; 3300] = [0; 3300];
     let mut entropy_input: [u8; 48] = [0; 48];
